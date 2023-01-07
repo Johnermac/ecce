@@ -13,8 +13,8 @@ def send_notification(n)
   url = URI.parse("https://api.pushover.net/1/messages.json")
   req = Net::HTTP::Post.new(url.path)
   req.set_form_data({
-    :token => "aszgvewecgao89j2k53py51qg9sos2",
-    :user => "u8nsnx6bbn6iqbimhoafuth4pjz98e",
+    :token => "...",
+    :user => "...",
     :message => "ecce Finished! #{n} Directories Found.",
     #:message => "#{u}/#{word}",
   })
