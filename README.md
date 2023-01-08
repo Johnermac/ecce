@@ -1,19 +1,4 @@
 Web Directory Enumeration Tool
 
+![image](https://user-images.githubusercontent.com/115858996/211177801-4f83b4d4-303a-4367-9cc8-66bce32dca24.png)
 
-_______ _______ _______ _______
-|______ |       |       |______
-|______ |_____  |_____  |______
-
-65 63 63 65
-
-
-Usage: ecce.rb [options]
-    -u, --url URL                    URL to enumerate
-    -w, --wordlist WORDLIST          Wordlist file
-    -t, --threads THREADS            Number of threads
-    -n, --notification               Send push notification via Pushover API
-    -s, --subdomains                 Enumerate subdomains
-    -v, --verbose                    Prints verbose output
-    -o, --output OUTPUT              Output file
-    -h, --help                       Prints this help
