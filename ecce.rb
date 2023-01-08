@@ -7,6 +7,7 @@ require 'colorize'
 require "net/https"
 require 'resolv'
 require 'uri'
+require 'socksify/http'
 
 
 def send_notification(n)
@@ -62,7 +63,7 @@ end
 
 
 # function for enumerating directories
-def enumerate_directories(url, wordlist, threads, verbose)
+def enumerate_directories(url, wordlist, threads, verbose, stealth)
 
   #----------------------------------------------------------------------
 
@@ -92,28 +93,44 @@ def enumerate_directories(url, wordlist, threads, verbose)
         lines.each do |line|
           # send a request to the URL with the word as a directory
           word = line.strip
-          uri = URI("#{url}/#{word}/")
-          response = Net::HTTP.get_response(uri)     
+          uri = URI("#{url}/#{word}/")             
           
+          # Stealth Mode
+          if stealth
+
+            # rotate IP through TOR 
+            hakuna = Net::HTTP::SOCKSProxy('127.0.0.1', 9150)
+            response = hakuna.get_response(uri)
+            
+            # for each 150 requests
+            if counter % 150 == 0        
+              # sleep for 60 seconds
+              # puts 'zzz'
+              sleep(60)
+
+              kiki = 'https://ident.me'
+              puts hakuna.get(URI(kiki)) 
+            end       
+          else 
+            response = Net::HTTP.get_response(uri)         
+          end
+          
+          # add a counter after the request
           counter += 1
 
-          puts "->  #{word}" if verbose
-
-          # pause the scan every 100 requests
-          if counter % 100 == 0
-            # puts 'ZzZ'
-            sleep(60) # sleep for 60 seconds
-          end            
+          # Verbose mode prints every word of the wordlist
+          puts "->  #{word}" if verbose                               
 
           # if the response is a 200 OK, add the word to the list of directories
-          if response.code == "200"
+          if response.code == '200'
             directories << word
             
-            puts "->  #{word} ".light_green                      
+            puts "->  #{word} ".light_green                       
 
-          elsif response.code == "301"
+          elsif response.code == '301'
             response = Net::HTTP.follow_redirection(response)                  
-          end        
+          end          
+          
         end
       rescue Exception => e
         puts e                
@@ -171,6 +188,10 @@ OptionParser.new do |opts|
     options[:verbose] = v
   end
 
+  opts.on("-x", "--stealth", "Stealth Mode uses TOR + paused requests") do |x|
+    options[:stealth] = x
+  end
+
   opts.on("-o OUTPUT", "--output OUTPUT", "Output file") do |output|
     options[:output] = output
   end
@@ -203,13 +224,19 @@ start_time = Time.now
 
 # CALL THE ENUMERATE METHOD >>>>>>>>>>>>>>>>>>>>>
 puts "Directories at #{options[:url]}:"
-directories = enumerate_directories(options[:url], options[:wordlist], options[:threads], options[:verbose])
+directories = enumerate_directories(options[:url], options[:wordlist], options[:threads], options[:verbose], options[:stealth])
 # puts directories
 
 # stop the timer
 end_time = Time.now
 elapsed_time = end_time - start_time
-puts "\nElapsed time: #{elapsed_time} seconds"
+
+if elapsed_time > 60
+  elapsed_time = elapsed_time / 60
+  puts "\nElapsed time: #{elapsed_time} minutes"
+else 
+  puts "\nElapsed time: #{elapsed_time} seconds"
+end
 
 # Notification via Pushover 
 if options[:notification]
