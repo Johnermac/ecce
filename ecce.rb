@@ -111,7 +111,7 @@ def enumerate_directories(url, wordlist, threads, verbose)
           if response.code == "200"
             directories << word
             
-            puts "->  #{word} ".light_green if verbose                        
+            puts "->  #{word} ".light_green                      
 
           elsif response.code == "301"
             response = Net::HTTP.follow_redirection(response)                  
