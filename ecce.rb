@@ -97,9 +97,7 @@ def enumerate_directories(url, wordlist, threads, verbose)
           
           counter += 1
 
-          if verbose
-            puts "->  #{word}"
-          end
+          puts "->  #{word}" if verbose
 
           # pause the scan every 100 requests
           if counter % 100 == 0
