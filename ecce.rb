@@ -13,8 +13,8 @@ def send_notification(n)
   url = URI.parse("https://api.pushover.net/1/messages.json")
   req = Net::HTTP::Post.new(url.path)
   req.set_form_data({
-    :token => "...",
-    :user => "...",
+    :token => "aszgvewecgao89j2k53py51qg9sos2",
+    :user => "u8nsnx6bbn6iqbimhoafuth4pjz98e",
     :message => "ecce Finished! #{n} Directories Found.",
     #:message => "#{u}/#{word}",
   })
@@ -62,7 +62,7 @@ end
 
 
 # function for enumerating directories
-def enumerate_directories(url, wordlist, threads)
+def enumerate_directories(url, wordlist, threads, verbose)
 
   #----------------------------------------------------------------------
 
@@ -83,22 +83,44 @@ def enumerate_directories(url, wordlist, threads)
   threads_lines.each do |lines|
     # create a new thread
     thread = Thread.new do
-      # loop through each line in the set
-      lines.each do |line|
-        # send a request to the URL with the word as a directory
-        word = line.strip
-        uri = URI("#{url}/#{word}/")
-        response = Net::HTTP.get_response(uri)     
-         
-        # puts "-> #{word}"  
 
-        # if the response is a 200 OK, add the word to the list of directories
-        if response.code == "200"
-          directories << word
+      begin 
 
-          puts "->  "+"#{word} ".light_green          
+        counter = 0
+
+        # loop through each line in the set
+        lines.each do |line|
+          # send a request to the URL with the word as a directory
+          word = line.strip
+          uri = URI("#{url}/#{word}/")
+          response = Net::HTTP.get_response(uri)     
+          
+          counter += 1
+
+          if verbose
+            puts "->  #{word}"
+          end
+
+          # pause the scan every 100 requests
+          if counter % 100 == 0
+            # puts 'ZzZ'
+            sleep(60) # sleep for 60 seconds
+          end            
+
+          # if the response is a 200 OK, add the word to the list of directories
+          if response.code == "200"
+            directories << word
+            
+            puts "->  #{word} ".light_green if verbose                        
+
+          elsif response.code == "301"
+            response = Net::HTTP.follow_redirection(response)                  
+          end        
         end
+      rescue Exception => e
+        puts e                
       end
+
     end
 
     # add the thread to the array
@@ -147,6 +169,10 @@ OptionParser.new do |opts|
     options[:subdomains] = subdomains
   end
 
+  opts.on("-v", "--verbose", "Prints verbose output") do |v|
+    options[:verbose] = v
+  end
+
   opts.on("-o OUTPUT", "--output OUTPUT", "Output file") do |output|
     options[:output] = output
   end
@@ -165,7 +191,7 @@ end
 
 # use the default wordlist if none is specified
 if !options[:wordlist]
-  options[:wordlist] = "teste.txt"
+  options[:wordlist] = "dir2copy.txt"
 end
 
 # use the default number of threads if none is specified
@@ -179,7 +205,7 @@ start_time = Time.now
 
 # CALL THE ENUMERATE METHOD >>>>>>>>>>>>>>>>>>>>>
 puts "Directories at #{options[:url]}:"
-directories = enumerate_directories(options[:url], options[:wordlist], options[:threads])
+directories = enumerate_directories(options[:url], options[:wordlist], options[:threads], options[:verbose])
 # puts directories
 
 # stop the timer
