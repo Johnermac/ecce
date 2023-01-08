@@ -108,8 +108,8 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
               # puts 'zzz'
               sleep(60)
 
-              kiki = 'https://ident.me'
-              puts hakuna.get(URI(kiki)) 
+              #kiki = 'https://ident.me'
+              #puts hakuna.get(URI(kiki)) 
             end       
           else 
             response = Net::HTTP.get_response(uri)         
