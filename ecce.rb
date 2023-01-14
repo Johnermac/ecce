@@ -8,6 +8,7 @@ require "net/https"
 require 'resolv'
 require 'uri'
 require 'socksify/http'
+require 'nokogiri'
 
 
 def send_notification(n)
@@ -27,40 +28,35 @@ end
 
 
 # subdomain enumeration in progress
-def enumerate_subdomains(url, wordlist = 'teste.txt')
-  # read the wordlist into an array
-  lines = File.readlines(wordlist)
+def enumerate_subdomains(stripped_url)
+  
+  # 1 - Getting subdomains from crt.sh
+  url = "https://crt.sh/?q=#{stripped_url}"
+  response = Net::HTTP.get(URI(url))
+  html_doc = Nokogiri::HTML(response)
 
-  # initialize an array to store the subdomains
   subdomains = []
-
-  host = url.match(/https?:\/\/www.([^\/]+)/)[1]
-  # puts host
-
-  # iterate over the lines in the wordlist
-  lines.each do |line|
-    # construct the subdomain URL
-    
-    subdomain_url = "http://#{line.chomp}.#{host}"
-    # puts subdomain_url
-
-    # check if the subdomain is valid
-    begin
-      # use the Resolv class to resolve the subdomain
-      Resolv.getaddress(subdomain_url)
-
-      # if the subdomain is valid, add it to the array
-      subdomains << subdomain_url
-      puts "➞  "+"#{subdomain_url} ".light_green 
-    rescue Resolv::ResolvError
-      # if the subdomain is not valid, do nothing
-    end
+  html_doc.css('td').each do |td|
+    subdomains += td.text.scan(/[a-z0-9]+\.#{Regexp.escape(stripped_url)}/)
   end
 
-  # return the array of subdomains
-  subdomains
-end
+  subdomains = subdomains.uniq
 
+  # 2 - Checking if the domains are accessible
+  active_subdomains = []
+
+  subdomains.each do |subdomain|
+    begin
+      response = Net::HTTP.get_response(URI("http://#{subdomain}"))
+      if response.code == "200" or response.code.start_with?("3")
+        active_subdomains << subdomain
+      end
+    rescue StandardError
+      # if subdomain not exists or dns can't be resolved
+    end
+  end  
+  return subdomains,active_subdomains
+end
 
 # function for enumerating directories
 def enumerate_directories(url, wordlist, threads, verbose, stealth)
@@ -210,7 +206,7 @@ end
 
 # use the default wordlist if none is specified
 if !options[:wordlist]
-  options[:wordlist] = "dir2copy.txt"
+  options[:wordlist] = "teste2.txt"
 end
 
 # use the default number of threads if none is specified
@@ -243,20 +239,48 @@ if options[:notification]
   send_notification(directories.size)
 end
 
-# Save the output
-if options[:output]
-    File.open(options[:output], mode: "w") do |file|
-      directories.each do |dir|
-        file.puts dir
-      end
-    end
-    puts "Results written to #{options[:output]}"
-  end
 
 # if the subdomains flag is set, enumerate the subdomains
 if options[:subdomains]
-  subdomains = enumerate_subdomains(options[:url])
-  puts "\nSubdomains at #{options[:url]}:"
-  puts subdomains
-  puts "Number of subdomains: #{subdomains.size}"
+  if /^(http|https|www)/i.match?(options[:url])  
+    stripped_url = options[:url].gsub(/https?:\/\/(www\.)?/, "").gsub(/(www\.)?/, "")      
+  else
+    stripped_url = options[:url]  
+  end
+  
+  subdomains, active_subdomains = enumerate_subdomains(stripped_url)
+  
+  #puts "\nSubdomains at #{stripped_url}:"     
 end
+
+
+# Save the output
+if options[:output].nil?
+  puts "Directories Found:".colorize(:light_green) +"\n  #{directories.join("\n  ")}"
+
+  if options[:subdomains]
+    puts "Subdomains found:".colorize(:light_green) +"\n  #{subdomains.join("\n  ")}"
+    puts "Active subdomains:".colorize(:light_green)  +"\n  #{active_subdomains.join("\n  ")}"
+    
+    puts "\nNumber of Subdomains: #{subdomains.size}"
+    puts "Number of Active subdomains: #{active_subdomains.size}"
+  end
+  puts "Number of Directories: #{directories.size}\n"
+else
+  begin
+    File.open(options[:output], 'w') do |file|
+      file.puts "Directories found:"
+      directories.each {|dir| file.puts "  #{dir}"}
+      file.puts "Subdomains found:"
+      subdomains.each {|subdomain| file.puts "  #{subdomain}"}
+      file.puts "Active subdomains:"
+      active_subdomains.each {|active| file.puts "  #{active}"}
+    end    
+  rescue StandardError
+    # puts 'The subdomain enum is not set'
+  end
+  puts "\nResults written to #{options[:output]}"
+end
+
+
+
