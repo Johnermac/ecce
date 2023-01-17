@@ -5,10 +5,10 @@ require 'net/http'
 require 'optparse'
 require 'colorize'
 require "net/https"
-require 'resolv'
 require 'uri'
 require 'socksify/http'
 require 'nokogiri'
+require 'watir'
 
 
 def send_notification(n)
@@ -42,6 +42,10 @@ def enumerate_subdomains(stripped_url)
 
   subdomains = subdomains.uniq
 
+  # Screenshots of the valid subdomains
+  Dir.mkdir(File.join(stripped_url, "sub")) unless File.exists?(File.join(stripped_url, "sub"))
+  browser = Watir::Browser.new :firefox, headless: true
+
   # 2 - Checking if the domains are accessible
   active_subdomains = []
 
@@ -50,11 +54,15 @@ def enumerate_subdomains(stripped_url)
       response = Net::HTTP.get_response(URI("http://#{subdomain}"))
       if response.code == "200" or response.code.start_with?("3")
         active_subdomains << subdomain
+
+        browser.goto("http://#{subdomain}")     
+        browser.screenshot.save "#{stripped_url}/sub/#{subdomain}.png"
       end
     rescue StandardError
       # if subdomain not exists or dns can't be resolved
     end
   end  
+  browser.close
   return subdomains,active_subdomains
 end
 
@@ -73,6 +81,15 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
   lines_per_thread = (lines.size / threads.to_f).ceil
   threads_lines = lines.each_slice(lines_per_thread).to_a
 
+  if /^(http|https|www)/i.match?(url)  
+    stripped_url = url.gsub(/https?:\/\/(www\.)?/, "").gsub(/(www\.)?/, "")
+  end
+
+  # Watir browser to take screenshots 
+  Dir.mkdir(stripped_url) unless File.exists?(stripped_url) 
+  Dir.mkdir(File.join(stripped_url, "dir")) unless File.exists?(File.join(stripped_url, "dir"))
+  #browser = Watir::Browser.new :firefox, headless: false
+
   # create an array of threads
   threads = []
 
@@ -83,7 +100,11 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
 
       begin 
 
+        # counter to the pausable requests
         counter = 0
+
+        # watir browser
+        browser = Watir::Browser.new :firefox, headless: true
 
         # loop through each line in the set
         lines.each do |line|
@@ -121,19 +142,25 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
           if response.code == '200'
             directories << word
             
-            puts "->  #{word} ".light_green                       
+            puts "->  #{word} ".light_green              
+            
+            # take screenshots using Watir            
+            browser.goto("#{uri}")  
+            browser.screenshot.save "#{stripped_url}/dir/#{word}.png"                                   
 
           elsif response.code == '301'
-            response = Net::HTTP.follow_redirection(response)                  
+            response = Net::HTTP.follow_redirection(response)   
+            puts "R ->  #{word} ".light_blue                
           end          
           
         end
+        browser.close
       rescue Exception => e
         puts e                
       end
 
-    end
-
+    end 
+    
     # add the thread to the array
     threads << thread
   end
@@ -256,16 +283,14 @@ end
 
 # Save the output
 if options[:output].nil?
-  puts "Directories Found:".colorize(:light_green) +"\n  #{directories.join("\n  ")}"
+  puts "\nDirectories Found:".colorize(:light_green) +"\n  #{directories.join("\n  ")}"
 
   if options[:subdomains]
     puts "Subdomains found:".colorize(:light_green) +"\n  #{subdomains.join("\n  ")}"
-    puts "Active subdomains:".colorize(:light_green)  +"\n  #{active_subdomains.join("\n  ")}"
-    
-    puts "\nNumber of Subdomains: #{subdomains.size}"
-    puts "Number of Active subdomains: #{active_subdomains.size}"
+    puts "Active subdomains:".colorize(:light_green)  +"\n  #{active_subdomains.join("\n  ")}" 
+
   end
-  puts "Number of Directories: #{directories.size}\n"
+  puts "\n"
 else
   begin
     File.open(options[:output], 'w') do |file|
