@@ -26,6 +26,18 @@ def send_notification(n)
   res.start {|http| http.request(req) }
 end
 
+def get_links(subdomain)
+  browser = Watir::Browser.new :firefox, headless: true
+
+  browser.goto("http://#{subdomain}")       
+  
+  links = browser.links.map { |link| link.href }
+  links = links.uniq 
+  
+  browser.close
+  return links
+end
+
 
 # subdomain enumeration in progress
 def enumerate_subdomains(stripped_url)
@@ -43,11 +55,12 @@ def enumerate_subdomains(stripped_url)
   subdomains = subdomains.uniq
 
   # Screenshots of the valid subdomains
-  Dir.mkdir(File.join(stripped_url, "sub")) unless File.exists?(File.join(stripped_url, "sub"))
-  browser = Watir::Browser.new :firefox, headless: true
+  #Dir.mkdir(File.join(stripped_url, "sub")) unless File.exists?(File.join(stripped_url, "sub"))
+  #browser = Watir::Browser.new :firefox, headless: true
 
   # 2 - Checking if the domains are accessible
   active_subdomains = []
+  links_total = []
 
   subdomains.each do |subdomain|
     begin
@@ -55,15 +68,18 @@ def enumerate_subdomains(stripped_url)
       if response.code == "200" or response.code.start_with?("3")
         active_subdomains << subdomain
 
-        browser.goto("http://#{subdomain}")     
-        browser.screenshot.save "#{stripped_url}/sub/#{subdomain}.png"
+        links = get_links(subdomain)
+        links_total.concat(links)
+
+        #browser.goto("http://#{subdomain}")     
+        #browser.screenshot.save "#{stripped_url}/sub/#{subdomain}.png"
       end
     rescue StandardError
       # if subdomain not exists or dns can't be resolved
     end
   end  
-  browser.close
-  return subdomains,active_subdomains
+  #browser.close
+  return subdomains,active_subdomains,links_total
 end
 
 # function for enumerating directories
@@ -275,7 +291,7 @@ if options[:subdomains]
     stripped_url = options[:url]  
   end
   
-  subdomains, active_subdomains = enumerate_subdomains(stripped_url)
+  subdomains, active_subdomains,links_total = enumerate_subdomains(stripped_url)
   
   #puts "\nSubdomains at #{stripped_url}:"     
 end
@@ -288,6 +304,7 @@ if options[:output].nil?
   if options[:subdomains]
     puts "Subdomains found:".colorize(:light_green) +"\n  #{subdomains.join("\n  ")}"
     puts "Active subdomains:".colorize(:light_green)  +"\n  #{active_subdomains.join("\n  ")}" 
+    puts "Links captured:".colorize(:light_green) + "\n #{links_total.uniq.join("\n  ")}"
 
   end
   puts "\n"
@@ -300,6 +317,8 @@ else
       subdomains.each {|subdomain| file.puts "  #{subdomain}"}
       file.puts "Active subdomains:"
       active_subdomains.each {|active| file.puts "  #{active}"}
+      file.puts "Links captured:"
+      links_total.each {|link| file.puts "  #{link}"}
     end    
   rescue StandardError
     # puts 'The subdomain enum is not set'
