@@ -26,18 +26,28 @@ def send_notification(n)
   res.start {|http| http.request(req) }
 end
 
-def get_links(subdomain)
-  browser = Watir::Browser.new :firefox, headless: true
-
-  browser.goto("http://#{subdomain}")       
+def get_links(browser, sub)
+  browser.goto("http://#{sub}")      
   
   links = browser.links.map { |link| link.href }
-  links = links.uniq 
-  
-  browser.close
+  links = links.uniq     
+
   return links
 end
 
+def get_prints(browser, dir, uri, stripped_url)  
+  
+  browser.goto("#{uri}/#{dir}")       
+  browser.screenshot.save "#{stripped_url}/dir/#{dir}.png"  
+   
+end
+
+def get_prints_sub(browser, sub, stripped_url)  
+
+  browser.goto("http://#{sub}")      
+  browser.screenshot.save "#{stripped_url}/sub/#{sub}.png"  
+   
+end
 
 # subdomain enumeration in progress
 def enumerate_subdomains(stripped_url)
@@ -55,12 +65,11 @@ def enumerate_subdomains(stripped_url)
   subdomains = subdomains.uniq
 
   # Screenshots of the valid subdomains
-  #Dir.mkdir(File.join(stripped_url, "sub")) unless File.exists?(File.join(stripped_url, "sub"))
+  Dir.mkdir(File.join(stripped_url, "sub")) unless File.exists?(File.join(stripped_url, "sub"))
   #browser = Watir::Browser.new :firefox, headless: true
 
   # 2 - Checking if the domains are accessible
-  active_subdomains = []
-  links_total = []
+  active_subdomains = []  
 
   subdomains.each do |subdomain|
     begin
@@ -68,18 +77,17 @@ def enumerate_subdomains(stripped_url)
       if response.code == "200" or response.code.start_with?("3")
         active_subdomains << subdomain
 
-        links = get_links(subdomain)
-        links_total.concat(links)
+        #links = get_links(browser, subdomain)
+        #links_total.concat(links)
+        #get_prints_sub(browser, subdomain, stripped_url)
 
-        #browser.goto("http://#{subdomain}")     
-        #browser.screenshot.save "#{stripped_url}/sub/#{subdomain}.png"
       end
     rescue StandardError
       # if subdomain not exists or dns can't be resolved
     end
   end  
   #browser.close
-  return subdomains,active_subdomains,links_total
+  return subdomains,active_subdomains
 end
 
 # function for enumerating directories
@@ -101,10 +109,7 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
     stripped_url = url.gsub(/https?:\/\/(www\.)?/, "").gsub(/(www\.)?/, "")
   end
 
-  # Watir browser to take screenshots 
-  Dir.mkdir(stripped_url) unless File.exists?(stripped_url) 
-  Dir.mkdir(File.join(stripped_url, "dir")) unless File.exists?(File.join(stripped_url, "dir"))
-  #browser = Watir::Browser.new :firefox, headless: false
+  
 
   # create an array of threads
   threads = []
@@ -117,10 +122,7 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
       begin 
 
         # counter to the pausable requests
-        counter = 0
-
-        # watir browser
-        browser = Watir::Browser.new :firefox, headless: true
+        counter = 0        
 
         # loop through each line in the set
         lines.each do |line|
@@ -160,26 +162,24 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
             
             puts "->  #{word} ".light_green              
             
-            # take screenshots using Watir            
-            browser.goto("#{uri}")  
-            browser.screenshot.save "#{stripped_url}/dir/#{word}.png"                                   
-
+            # take screenshots using Watir
+            #get_prints(browser, uri, stripped_url, word)          
+            #browser.goto("#{uri}")  
+            #browser.screenshot.save "#{stripped_url}/dir/#{word}.png"                                  
           elsif response.code == '301'
             response = Net::HTTP.follow_redirection(response)   
             puts "R ->  #{word} ".light_blue                
           end          
           
-        end
-        browser.close
+        end        
       rescue Exception => e
         puts e                
       end
-
     end 
     
     # add the thread to the array
     threads << thread
-  end
+  end  
 
   # wait for all threads to complete
   threads.each(&:join)
@@ -223,6 +223,14 @@ OptionParser.new do |opts|
     options[:subdomains] = subdomains
   end
 
+  opts.on("-p", "--print", "Take Screenshots") do |p|
+    options[:prints] = p
+  end
+
+  opts.on("-l", "--links", "Grab the Links") do |links|
+    options[:links] = links
+  end
+
   opts.on("-v", "--verbose", "Prints verbose output") do |v|
     options[:verbose] = v
   end
@@ -258,6 +266,15 @@ if !options[:threads]
 end
 
 
+if /^(http|https|www)/i.match?(options[:url]) 
+  stripped_url = options[:url].gsub(/https?:\/\/(www\.)?/, "").gsub(/(www\.)?/, "")
+end
+
+# Watir browser to take screenshots 
+Dir.mkdir(stripped_url) unless File.exists?(stripped_url) 
+Dir.mkdir(File.join(stripped_url, "dir")) unless File.exists?(File.join(stripped_url, "dir"))
+browser = Watir::Browser.new :firefox, headless: true
+
 # start the timer
 start_time = Time.now
 
@@ -265,6 +282,8 @@ start_time = Time.now
 puts "Directories at #{options[:url]}:"
 directories = enumerate_directories(options[:url], options[:wordlist], options[:threads], options[:verbose], options[:stealth])
 # puts directories
+
+
 
 # stop the timer
 end_time = Time.now
@@ -282,7 +301,6 @@ if options[:notification]
   send_notification(directories.size)
 end
 
-
 # if the subdomains flag is set, enumerate the subdomains
 if options[:subdomains]
   if /^(http|https|www)/i.match?(options[:url])  
@@ -291,11 +309,33 @@ if options[:subdomains]
     stripped_url = options[:url]  
   end
   
-  subdomains, active_subdomains,links_total = enumerate_subdomains(stripped_url)
+  subdomains, active_subdomains = enumerate_subdomains(stripped_url)
   
   #puts "\nSubdomains at #{stripped_url}:"     
 end
 
+if options[:links]
+  links_total = []
+  active_subdomains.each do |sub|
+    links = get_links(browser, sub)    
+    links_total.concat(links)
+  end
+end
+
+# Take Screenshots
+if options[:prints]
+  directories.each do |dir|
+    get_prints(browser, dir, options[:url], stripped_url)
+  end
+  if options[:subdomains]
+    active_subdomains.each do |sub|
+      get_prints_sub(browser, sub, stripped_url)
+    end
+  end
+end
+
+# close watir browser
+browser.close
 
 # Save the output
 if options[:output].nil?
@@ -304,9 +344,12 @@ if options[:output].nil?
   if options[:subdomains]
     puts "Subdomains found:".colorize(:light_green) +"\n  #{subdomains.join("\n  ")}"
     puts "Active subdomains:".colorize(:light_green)  +"\n  #{active_subdomains.join("\n  ")}" 
-    puts "Links captured:".colorize(:light_green) + "\n #{links_total.uniq.join("\n  ")}"
 
+    if options[:links]
+      puts "Links captured:".colorize(:light_green) + " #{links_total.uniq.sort_by(&:length).join("\n  ")}"
+    end    
   end
+  
   puts "\n"
 else
   begin
@@ -317,8 +360,8 @@ else
       subdomains.each {|subdomain| file.puts "  #{subdomain}"}
       file.puts "Active subdomains:"
       active_subdomains.each {|active| file.puts "  #{active}"}
-      file.puts "Links captured:"
-      links_total.each {|link| file.puts "  #{link}"}
+      file.puts "Links captured:"    
+      links_total.sort_by(&:size).each { |link| file.puts "  #{link}" }
     end    
   rescue StandardError
     # puts 'The subdomain enum is not set'
