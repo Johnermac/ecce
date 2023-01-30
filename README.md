@@ -2,4 +2,4 @@ Web Directory Enumeration Tool
 
 
 
-![image](https://user-images.githubusercontent.com/115858996/215364522-f5a5dd1f-651f-4caf-aedb-080b09542322.png)
+![image](https://user-images.githubusercontent.com/115858996/215364543-530041c8-6b09-4180-9257-bec5c91c75a6.png)
