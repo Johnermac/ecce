@@ -35,30 +35,15 @@ def get_links(browser, sub)
   return links
 end
 
-def get_prints(browser, dir, uri, stripped_url, verbose)  
+def get_prints(browser, url, file_path, verbose)  
 
-  puts "-> #{dir}".light_green if verbose
-
-  file_path = "#{stripped_url}/dir/#{dir}.png"
+  puts "->  #{url}".light_green if verbose
 
   # Check if the file already exists
   if !File.exist?(file_path)
-    browser.goto("#{uri}/#{dir}")       
+    browser.goto(url)       
     sleep 5    
     browser.screenshot.save file_path
-  end   
-end
-
-def get_prints_sub(browser, sub, stripped_url, verbose)  
-
-  puts "-> #{sub}".light_green if verbose
-
-  file_path = "#{stripped_url}/sub/#{sub}.png"
-
-  if !File.exist?(file_path)
-    browser.goto("http://#{sub}")      
-    sleep 5
-    browser.screenshot.save file_path 
   end   
 end
 
@@ -120,10 +105,10 @@ def enumerate_subdomains(stripped_url, threads, verbose)
       lines.each do |subdomain|
         begin
           response = Net::HTTP.get_response(URI("http://#{subdomain}"))
-          puts "-> #{subdomain}" if verbose
+          puts "->  #{subdomain}" if verbose
           if response.code == "200" or response.code.start_with?("3")
             active_subdomains << subdomain        
-            puts "-> #{active_subdomains[-1]}".light_green
+            puts "->  #{active_subdomains[-1]}".light_green
           end
         rescue Exception => e
           # puts e
@@ -372,11 +357,11 @@ end
 if options[:prints]
   puts "\nTaking Screenshots of #{stripped_url}:"
   directories.each do |dir|
-    get_prints(browser, dir, options[:url], stripped_url, options[:verbose])
+    get_prints(browser, "#{options[:url]}/#{dir}", "#{stripped_url}/dir/#{dir}.png", options[:verbose])
   end
   if options[:subdomains]
     active_subdomains.each do |sub|
-      get_prints_sub(browser, sub, stripped_url, options[:verbose])
+      get_prints(browser, "http://#{sub}", "#{stripped_url}/sub/#{sub}.png", options[:verbose])
     end
   end
 end
