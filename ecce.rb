@@ -11,13 +11,13 @@ require 'nokogiri'
 require 'watir'
 
 
-def send_notification(n)
+def send_notification(dir, sub)
   url = URI.parse("https://api.pushover.net/1/messages.json")
   req = Net::HTTP::Post.new(url.path)
   req.set_form_data({
     :token => "...",
     :user => "...",
-    :message => "ecce Finished! #{n} Directories Found.",
+    :message => "ecce Finished! \n#{dir} Directories Found. \n#{sub} Active Subdomains Found.",
     #:message => "#{u}/#{word}",
   })
   res = Net::HTTP.new(url.host, url.port)
@@ -30,27 +30,67 @@ def get_links(browser, sub)
   browser.goto("http://#{sub}")      
   
   links = browser.links.map { |link| link.href }
-  links = links.uniq     
+  links = links.uniq  
 
   return links
 end
 
-def get_prints(browser, dir, uri, stripped_url)  
-  
-  browser.goto("#{uri}/#{dir}")       
-  browser.screenshot.save "#{stripped_url}/dir/#{dir}.png"  
-   
+def get_prints(browser, dir, uri, stripped_url, verbose)  
+
+  puts "-> #{dir}".light_green if verbose
+
+  file_path = "#{stripped_url}/dir/#{dir}.png"
+
+  # Check if the file already exists
+  if !File.exist?(file_path)
+    browser.goto("#{uri}/#{dir}")       
+    sleep 5    
+    browser.screenshot.save file_path
+  end   
 end
 
-def get_prints_sub(browser, sub, stripped_url)  
+def get_prints_sub(browser, sub, stripped_url, verbose)  
 
-  browser.goto("http://#{sub}")      
-  browser.screenshot.save "#{stripped_url}/sub/#{sub}.png"  
-   
+  puts "-> #{sub}".light_green if verbose
+
+  file_path = "#{stripped_url}/sub/#{sub}.png"
+
+  if !File.exist?(file_path)
+    browser.goto("http://#{sub}")      
+    sleep 5
+    browser.screenshot.save file_path 
+  end   
 end
+
+def extract_emails_from_directories(browser, directories, uri)
+  emails = []
+  directories.each do |dir|
+    browser.goto("#{uri}/#{dir}")
+    elements = browser.elements(:xpath => "//*[text()]")
+    elements.each do |element|
+      text = element.text
+      emails << text.scan(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)
+    end
+  end
+  emails.flatten.uniq
+end
+
+def extract_emails_from_subdomains(browser, subdomains)
+  emails = []
+  subdomains.each do |sub|
+    browser.goto("http://#{sub}")
+    elements = browser.elements(:xpath => "//*[text()]")
+    elements.each do |element|
+      text = element.text
+      emails << text.scan(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)
+    end
+  end
+  emails.flatten.uniq
+end
+
 
 # subdomain enumeration in progress
-def enumerate_subdomains(stripped_url)
+def enumerate_subdomains(stripped_url, threads, verbose)
   
   # 1 - Getting subdomains from crt.sh
   url = "https://crt.sh/?q=#{stripped_url}"
@@ -66,27 +106,38 @@ def enumerate_subdomains(stripped_url)
 
   # Screenshots of the valid subdomains
   Dir.mkdir(File.join(stripped_url, "sub")) unless File.exists?(File.join(stripped_url, "sub"))
-  #browser = Watir::Browser.new :firefox, headless: true
+  
+  # 2 - Checking if the domains are accessible + Adding threads
+  # ----------------------------------------------------------------
+  active_subdomains = []    
+  
+  lines_per_thread = (subdomains.size / threads.to_f).ceil
+  threads_lines = subdomains.each_slice(lines_per_thread).to_a
+  threads = []
 
-  # 2 - Checking if the domains are accessible
-  active_subdomains = []  
-
-  subdomains.each do |subdomain|
-    begin
-      response = Net::HTTP.get_response(URI("http://#{subdomain}"))
-      if response.code == "200" or response.code.start_with?("3")
-        active_subdomains << subdomain
-
-        #links = get_links(browser, subdomain)
-        #links_total.concat(links)
-        #get_prints_sub(browser, subdomain, stripped_url)
-
+  threads_lines.each do |lines|    
+    thread = Thread.new do
+      lines.each do |subdomain|
+        begin
+          response = Net::HTTP.get_response(URI("http://#{subdomain}"))
+          puts "-> #{subdomain}" if verbose
+          if response.code == "200" or response.code.start_with?("3")
+            active_subdomains << subdomain        
+            puts "-> #{active_subdomains[-1]}".light_green
+          end
+        rescue Exception => e
+          # puts e
+        end
       end
-    rescue StandardError
-      # if subdomain not exists or dns can't be resolved
-    end
+    end 
+    
+    # add the thread to the array
+    threads << thread
   end  
-  #browser.close
+
+  # wait for all threads to complete
+  threads.each(&:join)  
+ 
   return subdomains,active_subdomains
 end
 
@@ -107,9 +158,7 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
 
   if /^(http|https|www)/i.match?(url)  
     stripped_url = url.gsub(/https?:\/\/(www\.)?/, "").gsub(/(www\.)?/, "")
-  end
-
-  
+  end  
 
   # create an array of threads
   threads = []
@@ -118,9 +167,7 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
   threads_lines.each do |lines|
     # create a new thread
     thread = Thread.new do
-
       begin 
-
         # counter to the pausable requests
         counter = 0        
 
@@ -157,20 +204,12 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
           puts "->  #{word}" if verbose                               
 
           # if the response is a 200 OK, add the word to the list of directories
-          if response.code == '200'
+          if response.code == '200' or response.code.start_with?("3")
             directories << word
             
-            puts "->  #{word} ".light_green              
-            
-            # take screenshots using Watir
-            #get_prints(browser, uri, stripped_url, word)          
-            #browser.goto("#{uri}")  
-            #browser.screenshot.save "#{stripped_url}/dir/#{word}.png"                                  
-          elsif response.code == '301'
-            response = Net::HTTP.follow_redirection(response)   
-            puts "R ->  #{word} ".light_blue                
+            puts "->  #{word} ".light_green        
+              
           end          
-          
         end        
       rescue Exception => e
         puts e                
@@ -231,6 +270,10 @@ OptionParser.new do |opts|
     options[:links] = links
   end
 
+  opts.on("-e", "--emails", "Extract Emails") do |emails|
+    options[:emails] = emails
+  end
+
   opts.on("-v", "--verbose", "Prints verbose output") do |v|
     options[:verbose] = v
   end
@@ -265,7 +308,6 @@ if !options[:threads]
   options[:threads] = 25
 end
 
-
 if /^(http|https|www)/i.match?(options[:url]) 
   stripped_url = options[:url].gsub(/https?:\/\/(www\.)?/, "").gsub(/(www\.)?/, "")
 end
@@ -283,8 +325,6 @@ puts "Directories at #{options[:url]}:"
 directories = enumerate_directories(options[:url], options[:wordlist], options[:threads], options[:verbose], options[:stealth])
 # puts directories
 
-
-
 # stop the timer
 end_time = Time.now
 elapsed_time = end_time - start_time
@@ -296,10 +336,6 @@ else
   puts "\nElapsed time: #{elapsed_time} seconds"
 end
 
-# Notification via Pushover 
-if options[:notification]
-  send_notification(directories.size)
-end
 
 # if the subdomains flag is set, enumerate the subdomains
 if options[:subdomains]
@@ -309,33 +345,49 @@ if options[:subdomains]
     stripped_url = options[:url]  
   end
   
-  subdomains, active_subdomains = enumerate_subdomains(stripped_url)
-  
-  #puts "\nSubdomains at #{stripped_url}:"     
+  puts "\nSubdomains at #{stripped_url}:"
+  subdomains, active_subdomains = enumerate_subdomains(stripped_url, options[:threads], options[:verbose])  
+      
 end
 
 if options[:links]
-  links_total = []
-  active_subdomains.each do |sub|
-    links = get_links(browser, sub)    
-    links_total.concat(links)
+  links_total = [] 
+
+  if options[:subdomains]
+    active_subdomains.each do |sub|
+      links = get_links(browser, sub)    
+      links_total.concat(links)
+    end
+  end  
+end
+
+if options[:emails]
+  emails = extract_emails_from_directories(browser, directories, options[:url])
+  if options[:subdomains]
+    emails += extract_emails_from_subdomains(browser, active_subdomains)
   end
 end
 
 # Take Screenshots
 if options[:prints]
+  puts "\nTaking Screenshots of #{stripped_url}:"
   directories.each do |dir|
-    get_prints(browser, dir, options[:url], stripped_url)
+    get_prints(browser, dir, options[:url], stripped_url, options[:verbose])
   end
   if options[:subdomains]
     active_subdomains.each do |sub|
-      get_prints_sub(browser, sub, stripped_url)
+      get_prints_sub(browser, sub, stripped_url, options[:verbose])
     end
   end
 end
 
 # close watir browser
 browser.close
+
+# Notification via Pushover 
+if options[:notification]
+  send_notification(directories.size, active_subdomains.size)
+end
 
 # Save the output
 if options[:output].nil?
@@ -348,6 +400,10 @@ if options[:output].nil?
     if options[:links]
       puts "Links captured:".colorize(:light_green) + " #{links_total.uniq.sort_by(&:length).join("\n  ")}"
     end    
+  end
+
+  if options[:emails]
+    puts "Emails captured:".colorize(:light_green) + "\n  #{emails.uniq.sort_by(&:length).join("\n  ")}"
   end
   
   puts "\n"
@@ -368,6 +424,3 @@ else
   end
   puts "\nResults written to #{options[:output]}"
 end
-
-
-
