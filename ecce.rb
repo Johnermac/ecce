@@ -26,13 +26,13 @@ def send_notification(dir, sub)
   res.start {|http| http.request(req) }
 end
 
-def get_links(browser, sub)
-  browser.goto("http://#{sub}")      
+def get_links(browser, file_path)
+  links = []
+  browser.goto(file_path)      
   
-  links = browser.links.map { |link| link.href }
-  links = links.uniq  
+  links = browser.links.map { |link| link.href }    
 
-  return links
+  return links.uniq
 end
 
 def get_prints(browser, url, file_path, verbose)  
@@ -40,37 +40,34 @@ def get_prints(browser, url, file_path, verbose)
   puts "->  #{url}".light_green if verbose
 
   # Check if the file already exists
-  if !File.exist?(file_path)
+  unless File.exist?(file_path)
+    FileUtils.mkdir_p(File.dirname(file_path))
     browser.goto(url)       
     sleep 5    
-    browser.screenshot.save file_path
+    browser.screenshot.save file_path    
   end   
 end
 
-def extract_emails_from_directories(browser, directories, uri)
-  emails = []
-  directories.each do |dir|
-    browser.goto("#{uri}/#{dir}")
-    elements = browser.elements(:xpath => "//*[text()]")
-    elements.each do |element|
-      text = element.text
-      emails << text.scan(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)
-    end
-  end
-  emails.flatten.uniq
-end
 
-def extract_emails_from_subdomains(browser, subdomains)
+def extract_emails(browser, data, type, uri)
   emails = []
-  subdomains.each do |sub|
-    browser.goto("http://#{sub}")
-    elements = browser.elements(:xpath => "//*[text()]")
-    elements.each do |element|
-      text = element.text
-      emails << text.scan(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)
+  begin
+    data.each do |item|
+      if type == :directories
+        browser.goto("#{uri}/#{item}")        
+      else        
+        browser.goto("http://#{item}")
+      end
+      elements = browser.elements(:xpath => "//*[text()]")
+      elements.each do |element|
+        text = element.text
+        emails << text.scan(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)
+      end
     end
-  end
-  emails.flatten.uniq
+    emails.flatten.uniq
+  rescue Exception => e
+    puts e
+  end 
 end
 
 
@@ -95,6 +92,10 @@ def enumerate_subdomains(stripped_url, threads, verbose)
   # 2 - Checking if the domains are accessible + Adding threads
   # ----------------------------------------------------------------
   active_subdomains = []    
+
+  # Grabbing the prints name to save time
+  active_subdomains = Dir["#{stripped_url}/sub/*.png"].map { |path| File.basename(path, '.png') }
+  puts "->  #{active_subdomains.join("\n->  ")} ".red
   
   lines_per_thread = (subdomains.size / threads.to_f).ceil
   threads_lines = subdomains.each_slice(lines_per_thread).to_a
@@ -104,6 +105,7 @@ def enumerate_subdomains(stripped_url, threads, verbose)
     thread = Thread.new do
       lines.each do |subdomain|
         begin
+          next if active_subdomains.include?("#{subdomain}")
           response = Net::HTTP.get_response(URI("http://#{subdomain}"))
           puts "->  #{subdomain}" if verbose
           if response.code == "200" or response.code.start_with?("3")
@@ -145,6 +147,10 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
     stripped_url = url.gsub(/https?:\/\/(www\.)?/, "").gsub(/(www\.)?/, "")
   end  
 
+  # Grabbing the prints name to save time
+  directories = Dir["#{stripped_url}/dir/*.png"].map { |path| File.basename(path, '.png') }
+  puts "->  #{directories.join("\n->  ")} ".red
+
   # create an array of threads
   threads = []
 
@@ -155,11 +161,14 @@ def enumerate_directories(url, wordlist, threads, verbose, stealth)
       begin 
         # counter to the pausable requests
         counter = 0        
-
+        
         # loop through each line in the set
         lines.each do |line|
           # send a request to the URL with the word as a directory
-          word = line.strip
+          word = line.strip          
+
+          next if directories.include?("#{word}")
+          
           uri = URI("#{url}/#{word}/")             
           
           # Stealth Mode
@@ -290,7 +299,7 @@ end
 
 # use the default number of threads if none is specified
 if !options[:threads]
-  options[:threads] = 25
+  options[:threads] = 20
 end
 
 if /^(http|https|www)/i.match?(options[:url]) 
@@ -336,20 +345,22 @@ if options[:subdomains]
 end
 
 if options[:links]
-  links_total = [] 
-
+  links_total = []
+  directories.each do |dir|
+    links_total += get_links(browser, "#{options[:url]}/#{dir}")     
+  end
   if options[:subdomains]
     active_subdomains.each do |sub|
-      links = get_links(browser, sub)    
-      links_total.concat(links)
+      links_total += get_links(browser, "http://#{sub}")          
     end
   end  
 end
 
 if options[:emails]
-  emails = extract_emails_from_directories(browser, directories, options[:url])
+  emails = []
+  emails += extract_emails(browser, directories, :directories, options[:url])  
   if options[:subdomains]
-    emails += extract_emails_from_subdomains(browser, active_subdomains)
+    emails += extract_emails(browser, active_subdomains, :subdomains, options[:url])    
   end
 end
 
@@ -380,12 +391,12 @@ if options[:output].nil?
 
   if options[:subdomains]
     puts "Subdomains found:".colorize(:light_green) +"\n  #{subdomains.join("\n  ")}"
-    puts "Active subdomains:".colorize(:light_green)  +"\n  #{active_subdomains.join("\n  ")}" 
-
-    if options[:links]
-      puts "Links captured:".colorize(:light_green) + " #{links_total.uniq.sort_by(&:length).join("\n  ")}"
-    end    
+    puts "Active subdomains:".colorize(:light_green)  +"\n  #{active_subdomains.join("\n  ")}"       
   end
+
+  if options[:links]
+    puts "Links captured:".colorize(:light_green) + " #{links_total.uniq.sort_by(&:length).join("\n  ")}"
+  end 
 
   if options[:emails]
     puts "Emails captured:".colorize(:light_green) + "\n  #{emails.uniq.sort_by(&:length).join("\n  ")}"
@@ -403,6 +414,8 @@ else
       active_subdomains.each {|active| file.puts "  #{active}"}
       file.puts "Links captured:"    
       links_total.sort_by(&:size).each { |link| file.puts "  #{link}" }
+      file.puts "Emails captured:"    
+      emails.sort_by(&:size).each { |email| file.puts "  #{email}" }
     end    
   rescue StandardError
     # puts 'The subdomain enum is not set'
