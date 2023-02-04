@@ -5,7 +5,7 @@ Web Directory Enumeration Tool
 
 Example:
 
-![image](https://user-images.githubusercontent.com/115858996/216793102-38ae001a-6999-4a04-a374-84e3b5201b85.png)
+![image](https://user-images.githubusercontent.com/115858996/216793233-bea34637-fbe0-413b-a0fd-2c5576f38650.png)
 
 
 -> To use stealth mode, browser Tor must be opened and connected
