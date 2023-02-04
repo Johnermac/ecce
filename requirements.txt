@@ -1,0 +1,5 @@
+gem install nokogiri
+gem install colorize
+gem install socksify
+gem install selenium-webdriver -v 4.7.1
+gem install watir
