@@ -21,8 +21,9 @@ ruby ecce.rb -u https://www.google.com -s -p -e -l
 
 ```bash
 -> To use stealth mode: the Tor browser must be opened and connected
--> On Linux: do not run with 'root'
+-> On Linux: do not run as 'root'
 -> Ensure that you have permission to the current directory to save the prints
+-> mv /usr/bin/firefox-esr /usr/bin/firefox
 ```
 
 <b>Gem Requirements: </b>
