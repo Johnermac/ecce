@@ -17,7 +17,7 @@ ruby ecce.rb -u https://www.google.com -s -p -e -l
 
 
 
-<b>Obs:</b>
+<b>Note:</b>
 
 ```bash
 -> To use stealth mode: the Tor browser must be opened and connected
