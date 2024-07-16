@@ -12,13 +12,13 @@
 <b>To Install: </b>
 
 ```bash
-bundle 
+bundle install
 ```
 
 <b>Example:</b>
 
 ```bash
-ruby ecce.rb -u https://www.google.com -s -p -e -l
+ruby ecce.rb -u https://www.google.com -d -s -p -e -l
 ```
 
 
