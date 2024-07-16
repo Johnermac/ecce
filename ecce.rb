@@ -1,6 +1,5 @@
 #C:\Ruby31-x64\bin ruby
 
-# require the net/http library and the optparse library
 require 'net/http'
 require 'optparse'
 require 'colorize'
@@ -302,7 +301,36 @@ end.parse!
 if !options[:url]
   puts "URL is a required option: -u URL".red
   exit
+else
+  #response = Net::HTTP.get_response(URI("#{options[:url]}"))  
+  
+  uri = URI(options[:url])
+
+  # Create a new Net::HTTP instance
+  http = Net::HTTP.new(uri.host, uri.port)
+
+  # Enable SSL/TLS if URI scheme is HTTPS
+  if uri.scheme == 'https'
+    http.use_ssl = true
+    
+    # Disable SSL certificate verification
+    http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+  end
+
+  begin
+    # Make an HTTP GET request to the URI
+    request = Net::HTTP::Get.new(uri.request_uri)
+    response = http.request(request)
+    puts "Checking URL ... OK\n".light_green   
+
+  rescue Exception => e
+    puts e
+    puts ""
+    #puts "Checking URL ... OFF\nVerify the connectivity before.\n".red  
+    exit               
+  end
 end
+
 
 # use the default wordlist if none is specified
 if !options[:wordlist]
