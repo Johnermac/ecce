@@ -9,12 +9,17 @@
 </h1>
 
 
+<b>To Install: </b>
+
+```bash
+bundle 
+```
 
 <b>Example:</b>
+
 ```bash
 ruby ecce.rb -u https://www.google.com -s -p -e -l
 ```
-
 
 
 <b>Note:</b>
@@ -26,17 +31,9 @@ ruby ecce.rb -u https://www.google.com -s -p -e -l
 -> mv /usr/bin/firefox-esr /usr/bin/firefox
 ```
 
-<b>Gem Requirements: </b>
-
-```bash
-gem install colorize -v 0.8.1
-gem install socksify -v 1.7.1
-gem install nokogiri -v 1.13.7
-gem install selenium-webdriver -v 4.7.1
-gem install watir -v 7.2.2
-```
 
 <b>Further improvements: </b>
+
 ```bash
 -> alternatives to stealth mode +vpn/proxies
 -> recursive mode

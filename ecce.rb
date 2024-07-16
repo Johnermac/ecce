@@ -28,6 +28,7 @@ end
 
 def get_links(browser, file_path)
   links = []
+  
   browser.goto(file_path)      
   
   links = browser.links.map { |link| link.href }    
@@ -50,24 +51,31 @@ end
 
 
 def extract_emails(browser, data, type, uri)
-  emails = []
+  emails = []  
   begin
     data.each do |item|
-      if type == :directories
-        browser.goto("#{uri}/#{item}")        
-      else        
-        browser.goto("http://#{item}")
-      end
+      # Determine the URL based on the type
+      url = type == :directories ? "#{uri}/#{item}" : "http://#{item}"
+      browser.goto(url)
+  
+      # Get all text-containing elements
       elements = browser.elements(:xpath => "//*[text()]")
+      
+  
+      # Extract email addresses from the text of each element
       elements.each do |element|
         text = element.text
-        emails << text.scan(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/)
+        
+        # Use regex to find email addresses and add them to the list
+        emails.concat(text.scan(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/))
       end
     end
-    emails.flatten.uniq
-  rescue Exception => e
-    puts e
-  end 
+    # Remove duplicates and flatten the list (although `concat` already flattens it)
+    emails.uniq!
+  rescue => e
+    # Log the error message
+    puts "An error occurred: #{e.message}"
+  end   
 end
 
 
@@ -87,7 +95,7 @@ def enumerate_subdomains(stripped_url, threads, verbose)
   subdomains = subdomains.uniq
 
   # Screenshots of the valid subdomains
-  Dir.mkdir(File.join(stripped_url, "sub")) unless File.exists?(File.join(stripped_url, "sub"))
+  Dir.mkdir(File.join(stripped_url, "sub")) unless File.exist?(File.join(stripped_url, "sub"))
   
   # 2 - Checking if the domains are accessible + Adding threads
   # ----------------------------------------------------------------
@@ -240,16 +248,8 @@ OptionParser.new do |opts|
     options[:url] = url
   end
 
-  opts.on("-w WORDLIST", "--wordlist WORDLIST", "Wordlist file") do |wordlist|
-    options[:wordlist] = wordlist
-  end
-
-  opts.on("-t THREADS", "--threads THREADS", "Number of threads") do |threads|
-    options[:threads] = threads.to_i
-  end
-  
-  opts.on("-n", "--notification", "Send push notification via Pushover API") do |n|
-    options[:notification] = n
+  opts.on("-d", "--directories", "Enumerate directories based on a Wordlist") do |dir|
+    options[:dir] = dir
   end
 
   opts.on("-s", "--subdomains", "Enumerate subdomains") do |subdomains|
@@ -266,6 +266,18 @@ OptionParser.new do |opts|
 
   opts.on("-e", "--emails", "Extract Emails") do |emails|
     options[:emails] = emails
+  end
+
+  opts.on("-w WORDLIST", "--wordlist WORDLIST", "Wordlist file") do |wordlist|
+    options[:wordlist] = wordlist
+  end
+
+  opts.on("-t THREADS", "--threads THREADS", "Number of threads") do |threads|
+    options[:threads] = threads.to_i
+  end
+  
+  opts.on("-n", "--notification", "Send push notification via Pushover API") do |n|
+    options[:notification] = n
   end
 
   opts.on("-v", "--verbose", "Prints verbose output") do |v|
@@ -307,29 +319,20 @@ if /^(http|https|www)/i.match?(options[:url])
 end
 
 # Watir browser to take screenshots 
-Dir.mkdir(stripped_url) unless File.exists?(stripped_url) 
-Dir.mkdir(File.join(stripped_url, "dir")) unless File.exists?(File.join(stripped_url, "dir"))
+Dir.mkdir(stripped_url) unless File.exist?(stripped_url) 
+Dir.mkdir(File.join(stripped_url, "dir")) unless File.exist?(File.join(stripped_url, "dir"))
 browser = Watir::Browser.new :firefox, headless: true
 
 # start the timer
 start_time = Time.now
 
-# CALL THE ENUMERATE METHOD >>>>>>>>>>>>>>>>>>>>>
-puts "Directories at #{options[:url]}:"
-directories = enumerate_directories(options[:url], options[:wordlist], options[:threads], options[:verbose], options[:stealth])
-# puts directories
-
-# stop the timer
-end_time = Time.now
-elapsed_time = end_time - start_time
-
-if elapsed_time > 60
-  elapsed_time = elapsed_time / 60
-  puts "\nElapsed time: #{elapsed_time} minutes"
-else 
-  puts "\nElapsed time: #{elapsed_time} seconds"
+if options[:dir]
+  # CALL THE Dir enum METHOD 
+  puts "Directories at #{options[:url]}:"
+  directories = enumerate_directories(options[:url], options[:wordlist], options[:threads], options[:verbose], options[:stealth])
+  # puts directories
+  
 end
-
 
 # if the subdomains flag is set, enumerate the subdomains
 if options[:subdomains]
@@ -344,36 +347,50 @@ if options[:subdomains]
       
 end
 
+
 if options[:links]
   links_total = []
-  directories.each do |dir|
-    links_total += get_links(browser, "#{options[:url]}/#{dir}")     
+
+  urls_to_process = []
+  urls_to_process << "#{options[:url]}/#{dir}" if options[:dir]
+  urls_to_process += directories.map { |dir| "#{options[:url]}/#{dir}" } if options[:dir]
+  urls_to_process += active_subdomains.map { |sub| "http://#{sub}" } if options[:subdomains]
+  urls_to_process << "#{options[:url]}/" if !options[:dir] && !options[:subdomains]
+
+  urls_to_process.each do |url|
+    links_total += get_links(browser, url)
   end
-  if options[:subdomains]
-    active_subdomains.each do |sub|
-      links_total += get_links(browser, "http://#{sub}")          
-    end
-  end  
 end
+
 
 if options[:emails]
   emails = []
-  emails += extract_emails(browser, directories, :directories, options[:url])  
+  if options[:dir]
+    emails += extract_emails(browser, directories, :directories, options[:url])  
+  end
   if options[:subdomains]
     emails += extract_emails(browser, active_subdomains, :subdomains, options[:url])    
+  end
+  if !options[:dir] && !options[:subdomains]
+    emails += extract_emails(browser, [""], :directories, options[:url])
   end
 end
 
 # Take Screenshots
 if options[:prints]
   puts "\nTaking Screenshots of #{stripped_url}:"
-  directories.each do |dir|
-    get_prints(browser, "#{options[:url]}/#{dir}", "#{stripped_url}/dir/#{dir}.png", options[:verbose])
+  if options[:dir]
+    directories.each do |dir|
+      get_prints(browser, "#{options[:url]}/#{dir}", "#{stripped_url}/dir/#{dir}.png", options[:verbose])
+    end
   end
   if options[:subdomains]
     active_subdomains.each do |sub|
       get_prints(browser, "http://#{sub}", "#{stripped_url}/sub/#{sub}.png", options[:verbose])
     end
+  end
+  if !options[:dir] && !options[:subdomains]
+    get_prints(browser, "#{options[:url]}/", "#{stripped_url}/dir/#{stripped_url}.png", options[:verbose])
   end
 end
 
@@ -386,8 +403,10 @@ if options[:notification]
 end
 
 # Save the output
-if options[:output].nil?
-  puts "\nDirectories Found:".colorize(:light_green) +"\n  #{directories.join("\n  ")}"
+if !options[:output] # other option > "options[:output].nil?"
+  if options[:dir]
+    puts "\nDirectories Found:".colorize(:light_green) +"\n  #{directories.join("\n  ")}"
+  end
 
   if options[:subdomains]
     puts "Subdomains found:".colorize(:light_green) +"\n  #{subdomains.join("\n  ")}"
@@ -395,7 +414,7 @@ if options[:output].nil?
   end
 
   if options[:links]
-    puts "Links captured:".colorize(:light_green) + " #{links_total.uniq.sort_by(&:length).join("\n  ")}"
+    puts "Links captured:".colorize(:light_green) + "\n #{links_total.uniq.sort_by(&:length).join("\n  ")}"
   end 
 
   if options[:emails]
@@ -403,6 +422,10 @@ if options[:output].nil?
   end
   
   puts "\n"
+  # stop the timer
+  end_time = Time.now
+  elapsed_time = end_time - start_time
+
 else
   begin
     File.open(options[:output], 'w') do |file|
@@ -421,4 +444,11 @@ else
     # puts 'The subdomain enum is not set'
   end
   puts "\nResults written to #{options[:output]}"
+end
+
+if elapsed_time > 60
+  elapsed_time = elapsed_time / 60
+  puts "\nElapsed time: #{elapsed_time} minutes"
+else 
+  puts "\nElapsed time: #{elapsed_time} seconds"
 end
